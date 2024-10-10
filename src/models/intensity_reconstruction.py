@@ -7,13 +7,16 @@ class IntensityReconstructor:
         self.history = {'obj_values': []}
 
     def define_space_time_grid(self):
-        x = np.linspace(-0.01, 0.01, 64)
-        y = np.linspace(-0.01, 0.01, 64)
-        t = np.linspace(0, 0.001, 10)  # 1 ms, 10 time points
+        x = np.linspace(self.params['x_range'][0], self.params['x_range'][1], self.params['x_points'])
+        y = np.linspace(self.params['y_range'][0], self.params['y_range'][1], self.params['y_points'])
+        t = np.linspace(self.params['t_range'][0], self.params['t_range'][1], self.params['t_points'])
         X, Y, T = np.meshgrid(x, y, t, indexing='ij')
         return x, y, t, X, Y, T
 
-    def define_measurement_region(self, X, Y, r=0.01, x0=0.0, y0=0.0):
+    def define_measurement_region(self, X, Y, r=None, x0=None, y0=None):
+        r = r if r is not None else self.params['r']
+        x0 = x0 if x0 is not None else self.params['x0']
+        y0 = y0 if y0 is not None else self.params['y0']
         distance = np.sqrt((X[:, :, 0] - x0)**2 + (Y[:, :, 0] - y0)**2)
         measurement_mask = distance <= r
         measurement_indices = np.where(measurement_mask)
@@ -61,7 +64,10 @@ class IntensityReconstructor:
         intensity[measurement_indices] = (Psi @ s).reshape((len(measurement_indices[0]), -1))
         return intensity
 
-    def reconstruct(self, y_measurements, theta_list):
+    def reconstruct(self, y_measurements, theta_list=None):
+        if theta_list is None:
+            theta_list = np.linspace(self.params['theta_range'][0], self.params['theta_range'][1], self.params['theta_points'])
+        
         x, y, t, X, Y, T = self.define_space_time_grid()
         measurement_mask, measurement_indices = self.define_measurement_region(X, Y)
         Psi = self.construct_dictionary_intensity(X, Y, T, theta_list, measurement_indices)
