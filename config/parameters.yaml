@@ -1,0 +1,11 @@
+system:
+  A0: 1e-7
+  theta_incidence: 30
+  k_magnitude: 314.159  # 2 * pi / 0.02
+  f: 1000
+  lambda_laser: 1e-6
+
+reconstruction:
+  r: 0.01
+  x0: 0.0
+  y0: 0.0
