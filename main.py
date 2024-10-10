@@ -2,6 +2,8 @@ from src.models.intensity_reconstruction import IntensityReconstructor
 from src.visualization.visualizer import Visualizer
 from src.data.data_loader import DataLoader
 from src.utils.helpers import define_system_parameters
+import matplotlib.pyplot as plt
+import numpy as np
 
 def main():
     # Load configuration
@@ -22,16 +24,25 @@ def main():
 
     # Visualize results
     visualizer = Visualizer()
-    visualizer.visualize_intensity_fields(data['intensity'], reconstructed_intensity)
-    visualizer.plot_objective_function(reconstructor.history)
-    visualizer.plot_reconstruction_spectrum(
+    
+    fig1 = visualizer.visualize_intensity_fields(data['intensity'], reconstructed_intensity)
+    fig2 = visualizer.plot_objective_function(reconstructor.history)
+    fig3 = visualizer.plot_reconstruction_spectrum(
         np.linspace(params['theta_range'][0], params['theta_range'][1], params['theta_points']), 
         s_est
     )
-    visualizer.analyze_peaks(
+    fig4, peak_angles, peak_values = visualizer.analyze_peaks(
         np.linspace(params['theta_range'][0], params['theta_range'][1], params['theta_points']), 
         s_est
     )
+
+    # Display results
+    print(f"Reconstruction Error: {reconstruction_error}")
+    print(f"Reconstructed Theta: {np.degrees(reconstructed_theta):.2f} degrees")
+    print(f"Peak Angles: {peak_angles}")
+    print(f"Peak Values: {peak_values}")
+
+    plt.show()
 
 if __name__ == "__main__":
     main()
