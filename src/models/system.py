@@ -1,27 +1,25 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from ..utils.verification import PhysicsVerification
+from .material import MaterialProperties
 
 @dataclass
 class SystemParameters:
     """雷射都卜勒振動儀系統參數類"""
-    
-    # 雷射參數
-    wavelength: float  # 雷射波長 (m)
-    power: float      # 雷射功率 (W)
-    beam_radius: float  # 光束半徑 (m)
-    
-    # 光學系統參數
-    focal_length: float  # 聚焦鏡頭焦距 (m)
-    working_distance: float  # 工作距離 (m)
-    scan_angle: float  # 掃描角度 (rad)
-    
-    # 數據採集參數
-    sampling_rate: float  # 採樣率 (Hz)
-    measurement_time: float  # 測量時間 (s)
-    
+    material: MaterialProperties  # Required field, no default
+    wavelength: float = 632.8e-9    # He-Ne雷射
+    power: float = 1e-3            # 1mW
+    beam_radius: float = 0.5e-3    # 0.5mm
+    focal_length: float = 0.2      # 20cm
+    working_distance: float = 0.5   # 50cm
+    scan_angle: float = 1e-3       # 1mrad
+    sampling_rate: float = 1e4     # 10kHz
+    measurement_time: float = 1.0   # 1s
+
     def __post_init__(self):
         """初始化後進行參數驗證"""
+        if not isinstance(self.material, MaterialProperties):
+            raise TypeError("material must be an instance of MaterialProperties")
         self.validate_parameters()
     
     def validate_parameters(self) -> Dict[str, PhysicsVerification]:
