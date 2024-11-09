@@ -156,6 +156,8 @@ class LaserDopplerVibrometer:
     
     def plot_comprehensive_analysis(self) -> None:
         """繪製綜合分析圖"""
+        plt.rcParams['font.family'] = ['Microsoft JhengHei']
+
         # 測量中心點
         x, y = 0, 0
         results = self.analyze_vibration(x, y)
@@ -174,7 +176,7 @@ class LaserDopplerVibrometer:
         ax2.plot(results['time'], results['velocity']*1e3)
         ax2.set_xlabel('時間 (s)')
         ax2.set_ylabel('速度 (mm/s)')
-        ax2.set_title('��度時域響應')
+        ax2.set_title('速度時域響應')
         ax2.grid(True)
         
         # 頻譜圖
