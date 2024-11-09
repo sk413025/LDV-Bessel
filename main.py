@@ -1,48 +1,43 @@
-from src.models.intensity_reconstruction import IntensityReconstructor
-from src.visualization.visualizer import Visualizer
-from src.data.data_loader import DataLoader
-from src.utils.helpers import define_system_parameters
-import matplotlib.pyplot as plt
-import numpy as np
+from src.models.material import MaterialProperties
+from src.models.modal import ClassicalModalAnalysis
+from src.models.modal import BesselModalAnalysis
+from src.analysis.vibration import SurfaceVibrationModel
+from src.ldv import LaserDopplerVibrometer
 
 def main():
-    # Load configuration
-    params = define_system_parameters()
-
-    # Initialize data loader
-    data_loader = DataLoader(params)
-
-    # Get data (synthetic for now)
-    data = data_loader.get_data(use_synthetic=True)
-
-    # Initialize and run reconstruction
-    reconstructor = IntensityReconstructor(params)
-    reconstructed_intensity, s_est, reconstruction_error, reconstructed_theta = reconstructor.reconstruct(
-        data['y_measurements'], 
-        np.linspace(params['theta_range'][0], params['theta_range'][1], params['theta_points'])
-    )
-
-    # Visualize results
-    visualizer = Visualizer()
+    # 創建材料實例
+    material = MaterialProperties.create_cardboard()
     
-    fig1 = visualizer.visualize_intensity_fields(data['intensity'], reconstructed_intensity)
-    fig2 = visualizer.plot_objective_function(reconstructor.history)
-    fig3 = visualizer.plot_reconstruction_spectrum(
-        np.linspace(params['theta_range'][0], params['theta_range'][1], params['theta_points']), 
-        s_est
+    # 使用傳統模態分析
+    ldv_classical = LaserDopplerVibrometer(
+        material=material,
+        modal_analyzer=ClassicalModalAnalysis
     )
-    fig4, peak_angles, peak_values = visualizer.analyze_peaks(
-        np.linspace(params['theta_range'][0], params['theta_range'][1], params['theta_points']), 
-        s_est
+    print("\n使用傳統模態分析...")
+    ldv_classical.plot_comprehensive_analysis()
+    
+    # 使用Bessel模態分析
+    ldv_bessel = LaserDopplerVibrometer(
+        material=material,
+        modal_analyzer=BesselModalAnalysis
     )
+    print("\n使用Bessel模態分析...")
+    ldv_bessel.plot_comprehensive_analysis()
+    
+    # 比較兩種方法結果
+    compare_results(ldv_classical, ldv_bessel)
 
-    # Display results
-    print(f"Reconstruction Error: {reconstruction_error}")
-    print(f"Reconstructed Theta: {np.degrees(reconstructed_theta):.2f} degrees")
-    print(f"Peak Angles: {peak_angles}")
-    print(f"Peak Values: {peak_values}")
-
-    plt.show()
+def compare_results(classical, bessel):
+    """比較兩種模態分析方法的結果"""
+    x, y = 0, 0  # 測量點
+    classical_results = classical.analyze_vibration(x, y)
+    bessel_results = bessel.analyze_vibration(x, y)
+    
+    print("\n比較結果:")
+    print("傳統模態分析:")
+    print(f"最大位移: {classical_results['diagnostics']['displacement_stats']['max']*1e9:.2f} nm")
+    print("\nBessel模態分析:")
+    print(f"最大位移: {bessel_results['diagnostics']['displacement_stats']['max']*1e9:.2f} nm")
 
 if __name__ == "__main__":
     main()
