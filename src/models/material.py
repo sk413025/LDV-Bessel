@@ -16,6 +16,39 @@ class MaterialProperties:
     poisson_ratio: float = 0.3  # 泊松比
     yield_strain: float = 0.001  # 降伏應變
     
+    def __post_init__(self):
+        """初始化後驗證材料參數"""
+        # 驗證材料穩定性
+        verifications = self.verify_material_stability()
+        
+        # 打印所有驗證結果
+        print("\n材料參數驗證結果：")
+        for name, result in verifications.items():
+            status = "✓ 通過" if result.is_valid else "✗ 失敗"
+            print(f"{name}: {status}")
+            print(f"  當前值: {result.actual_value:.2e}")
+            print(f"  預期範圍: ({result.valid_range[0]:.2e}, {result.valid_range[1]:.2e})")
+            print(f"  說明: {result.description}")  # Changed from 'message' to 'description'
+        
+        # 檢查是否有任何驗證失敗
+        failed_verifications = {
+            name: result for name, result in verifications.items() 
+            if not result.is_valid
+        }
+        
+        if failed_verifications:
+            warnings = []
+            for name, result in failed_verifications.items():
+                warnings.append(
+                    f"{name}: actual_value={result.actual_value}, "
+                    f"valid_range={result.valid_range}, "
+                    f"message='{result.message}'"
+                )
+            raise ValueError(
+                "Material properties validation failed:\n" + 
+                "\n".join(warnings)
+            )
+    
     @classmethod
     def create_cardboard(cls):
         """創建紙箱材料特性"""
@@ -41,37 +74,37 @@ class MaterialProperties:
         theoretical_sound_speed = np.sqrt(self.youngs_modulus / self.density)
         sound_speed_valid = 0.1 * theoretical_sound_speed < self.sound_speed < 10 * theoretical_sound_speed
         verifications['sound_speed'] = PhysicsVerification(
-            sound_speed_valid,
-            self.sound_speed,
-            (0.1 * theoretical_sound_speed, 10 * theoretical_sound_speed),
-            "聲速與材料特性相符性"
+            is_valid=sound_speed_valid,
+            actual_value=self.sound_speed,
+            valid_range=(0.1 * theoretical_sound_speed, 10 * theoretical_sound_speed),
+            description="聲速與材料特性相符性"  # Changed from 'message' to 'description'
         )
         
         # 泊松比物理限制
         poisson_valid = -1.0 < self.poisson_ratio < 0.5
         verifications['poisson_ratio'] = PhysicsVerification(
-            poisson_valid,
-            self.poisson_ratio,
-            (-1.0, 0.5),
-            "泊松比物理限制"
+            is_valid=poisson_valid,
+            actual_value=self.poisson_ratio,
+            valid_range=(-1.0, 0.5),
+            description="泊松比物理限制"  # Changed from 'message' to 'description'
         )
         
         # 阻尼比驗證
         damping_valid = 0 < self.damping_ratio < 1.0
         verifications['damping'] = PhysicsVerification(
-            damping_valid,
-            self.damping_ratio,
-            (0, 1.0),
-            "阻尼比合理性"
+            is_valid=damping_valid,
+            actual_value=self.damping_ratio,
+            valid_range=(0, 1.0),
+            description="阻尼比合理性"  # Changed from 'message' to 'description'
         )
         
         # 反射率驗證
         reflectivity_valid = 0 < self.reflectivity <= 1.0
         verifications['reflectivity'] = PhysicsVerification(
-            reflectivity_valid,
-            self.reflectivity,
-            (0, 1.0),
-            "反射率物理限制"
+            is_valid=reflectivity_valid,
+            actual_value=self.reflectivity,
+            valid_range=(0, 1.0),
+            description="反射率物理限制"  # Changed from 'message' to 'description'
         )
         
         return verifications

@@ -90,3 +90,20 @@ def test_modal_response(system_params, box_dimensions):
     
     assert isinstance(classical_response, (float, np.float64))
     assert isinstance(bessel_response, (float, np.float64))
+
+def test_modal_response_limits(system_params, box_dimensions):
+    """Test the modal response limits"""
+    # Create modal analysis instance
+    modal = ClassicalModalAnalysis(system_params, box_dimensions)
+    modal.calculate_modal_frequencies()
+    modal.calculate_modal_shapes()
+    
+    # Test response at t=0
+    response_t0 = modal.calculate_modal_response(0.05, 0.05, 0)
+    assert abs(response_t0) < 1e-3  # Should be near zero at t=0
+    
+    # Test response at resonance
+    t_res = 1/system_params.f_acoustic
+    response_res = modal.calculate_modal_response(0.05, 0.05, t_res)
+    assert abs(response_res) < 1e-3  # Should be reasonable magnitude
+

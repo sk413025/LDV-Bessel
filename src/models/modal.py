@@ -47,8 +47,12 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         
         for i in range(1, 4):
             for j in range(1, 4):
+                # 改進的頻率方程，考慮二維振動
                 f_ij = (np.pi/2) * np.sqrt(self.bending_stiffness/
                        self.params.material.density) * ((i/L)**2 + (j/W)**2)
+                
+                # 應用邊界條件修正
+                f_ij *= self.params.boundary_factor
                 frequencies.append(f_ij)
         
         self.modal_frequencies = sorted(frequencies)
@@ -58,20 +62,39 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         L = self.box_dimensions['length']
         W = self.box_dimensions['width']
         shapes = []
-
+        
+        # 改進的模態形狀函數，考慮二維振動
         for i in range(1, 4):
             for j in range(1, 4):
                 def shape_func(x, y, i=i, j=j, L=L, W=W):
-                    return np.sin(i*np.pi*x/L) * np.sin(j*np.pi*y/W)
+                    # 應用改進的邊界條件
+                    x_factor = np.sin(i*np.pi*x/L) if x <= L else 0
+                    y_factor = np.sin(j*np.pi*y/W) if y <= W else 0
+                    return x_factor * y_factor
                 shapes.append(shape_func)
-
+        
         self.modal_shapes = shapes
         return shapes
         
     def calculate_modal_response(self, x: float, y: float, t: float) -> float:
         modal_response = 0
         for freq, shape_func in zip(self.modal_frequencies, self.modal_shapes):
-            modal_response += shape_func(x, y) * np.sin(2 * np.pi * freq * t)
+            omega_modal = 2 * np.pi * freq
+            
+            # 計算模態參與因子（改進的計算）
+            participation_factor = self.params.Q_factor/(1 + 
+                                                    abs(freq - self.params.f_acoustic))
+            
+            # 計算模態響應（考慮阻尼和相位）
+            zeta = self.params.material.damping_ratio
+            omega = 2 * np.pi * self.params.f_acoustic
+            modal_phase = np.arctan2(2*zeta*omega*omega_modal, 
+                                   omega_modal**2 - omega**2)
+            
+            modal_response += (participation_factor * shape_func(x, y) * 
+                             np.exp(-zeta * omega_modal * t) * 
+                             np.sin(omega_modal * t + modal_phase))
+        
         return modal_response
 
 class BesselModalAnalysis(ModalAnalysisBase):

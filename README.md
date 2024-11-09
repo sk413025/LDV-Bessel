@@ -1,21 +1,21 @@
 # LDV-Bessel Project
 
 ## Overview
-This project provides tools and utilities for Laser Doppler Vibrometer (LDV) analysis using Bessel functions. It focuses on processing and analyzing vibration measurements to understand structural dynamics and material properties.
+Tools for analyzing vibration measurements using both classical and Bessel function-based methods in Laser Doppler Vibrometry. Specializes in modal analysis and real-time signal processing.
 
 ## Features
-- Data acquisition from LDV systems
-- Advanced signal processing with Bessel function analysis
-- Frequency domain analysis capabilities
-- Material properties characterization
-- Visualization tools for displacement and velocity data
+- Dual modal analysis methods (Classical and Bessel)
+- Real-time LDV signal processing
+- Advanced frequency domain analysis
+- Surface vibration modeling
+- Interactive visualization tools
+- Automated measurement sequences 
 
 ## Requirements
-- Python 3.7+
-- Required packages:
-```
-pip install -r requirements.txt
-```
+- Python 3.8+
+- NumPy >= 1.20
+- SciPy >= 1.7
+- Matplotlib >= 3.4
 
 ## Project Structure
 - `src/`: Source code files
