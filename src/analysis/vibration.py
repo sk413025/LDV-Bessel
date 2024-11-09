@@ -5,38 +5,37 @@ from ..models.system import SystemParameters
 from ..models.modal import ClassicalModalAnalysis, BesselModalAnalysis
 
 class SurfaceVibrationModel:
-    """表面振動模型類，用於模擬和分析表面振動行為"""
+    """表面振動分析模型"""
     
     def __init__(self, 
                  system_params: SystemParameters,
-                 analysis_type: str = "classical"):
+                 analysis_type: str = "classical",
+                 modal_analyzer: type = None):
         """
-        初始化表面振動模型
+        初始化振動分析模型
         
         Args:
-            system_params: 系統參數物件
+            system_params: 系統參數
             analysis_type: 分析類型 ("classical" 或 "bessel")
+            modal_analyzer: 模態分析器類別 (ClassicalModalAnalysis 或 BesselModalAnalysis)
         """
-        self.params = system_params
+        self.system_params = system_params
         self.analysis_type = analysis_type
-        self.modal_analyzer = None
-        self.displacement_history = []
-        self.velocity_history = []
+        self.modal_analyzer = modal_analyzer
+        self.modal_analysis = None
         
-    def setup_modal_analysis(self, box_dimensions: Dict[str, float]) -> None:
-        """
-        設置模態分析器
-        
-        Args:
-            box_dimensions: 結構尺寸參數 {"length": float, "width": float, "thickness": float}
-        """
-        if self.analysis_type == "classical":
-            self.modal_analyzer = ClassicalModalAnalysis(self.params, box_dimensions)
-        elif self.analysis_type == "bessel":
-            self.modal_analyzer = BesselModalAnalysis(self.params, box_dimensions)
-        else:
-            raise ValueError("不支援的分析類型")
+    def setup_modal_analysis(self, box_dimensions: Dict[str, float]):
+        """設置模態分析"""
+        if self.modal_analyzer is None:
+            raise ValueError("No modal analyzer specified")
             
+        self.modal_analysis = self.modal_analyzer(
+            self.system_params,
+            box_dimensions
+        )
+        self.modal_analysis.calculate_modal_frequencies()
+        self.modal_analysis.calculate_modal_shapes()
+
     def calculate_surface_response(self, 
                                  x: float, 
                                  y: float, 
@@ -57,8 +56,8 @@ class SurfaceVibrationModel:
             raise RuntimeError("請先設置模態分析器")
             
         # 計算模態頻率和形狀
-        frequencies = self.modal_analyzer.calculate_modal_frequencies()
-        mode_shapes = self.modal_analyzer.calculate_modal_shapes()
+        frequencies = self.modal_analysis.calculate_modal_frequencies()
+        mode_shapes = self.modal_analysis.calculate_modal_shapes()
         
         # 計算位移和速度響應
         displacement = np.zeros_like(time_points)
@@ -66,7 +65,7 @@ class SurfaceVibrationModel:
         
         for t_idx, t in enumerate(time_points):
             # 計算位移
-            displacement[t_idx] = self.modal_analyzer.calculate_modal_response(x, y, t)
+            displacement[t_idx] = self.modal_analysis.calculate_modal_response(x, y, t)
             
             # 計算速度（位移的時間導數）
             if t_idx > 0:
@@ -137,8 +136,8 @@ class SurfaceVibrationModel:
             raise RuntimeError("請先計算表面響應")
             
         freqs, amp = self.get_frequency_response(
-            self.params.sampling_rate, 
-            len(self.velocity_history)/self.params.sampling_rate
+            self.system_params.sampling_rate, 
+            len(self.velocity_history)/self.system_params.sampling_rate
         )
         
         # 找出最大的n個峰值

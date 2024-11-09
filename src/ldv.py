@@ -1,6 +1,8 @@
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, Any
 import numpy as np
-from .models.system import SystemParameters, OpticalSystem
+import matplotlib.pyplot as plt
+from .models.system import SystemParameters
+from .models.optical import OpticalSystem
 from .models.material import MaterialProperties
 from .analysis.vibration import SurfaceVibrationModel
 
@@ -8,30 +10,31 @@ class LaserDopplerVibrometer:
     """雷射都卜勒振動儀主類"""
 
     def __init__(self,
-                 system_params: SystemParameters,
                  material: MaterialProperties,
+                 modal_analyzer: type = None,
                  analysis_type: str = "classical"):
         """
         初始化LDV系統
         
         Args:
-            system_params: 系統參數
             material: 待測物材料特性
+            modal_analyzer: 模態分析器類型 (ClassicalModalAnalysis 或 BesselModalAnalysis)
             analysis_type: 分析類型 ("classical" 或 "bessel")
         """
-        self.params = system_params
         self.material = material
+        self.system_params = SystemParameters(material)
         self.optical_system = OpticalSystem(
-            wavelength=system_params.wavelength,
-            beam_diameter=2*system_params.beam_radius,
-            focal_length=system_params.focal_length,
-            working_distance=system_params.working_distance,
-            beam_divergence=system_params.scan_angle,
-            optical_power=system_params.power
+            wavelength=self.system_params.wavelength,
+            beam_diameter=2*self.system_params.beam_radius,
+            focal_length=self.system_params.focal_length,
+            working_distance=self.system_params.working_distance,
+            beam_divergence=self.system_params.scan_angle,
+            optical_power=self.system_params.power
         )
         self.vibration_model = SurfaceVibrationModel(
-            system_params=system_params,
-            analysis_type=analysis_type
+            system_params=self.system_params,
+            analysis_type=analysis_type,
+            modal_analyzer=modal_analyzer
         )
         
     def setup_measurement(self, box_dimensions: Dict[str, float]) -> None:
@@ -59,7 +62,7 @@ class LaserDopplerVibrometer:
             time_points: 時間陣列
             velocities: 速度陣列
         """
-        time_points = np.linspace(0, duration, int(self.params.sampling_rate * duration))
+        time_points = np.linspace(0, duration, int(self.system_params.sampling_rate * duration))
         _, velocities = self.vibration_model.calculate_surface_response(x, y, time_points)
         
         return time_points, velocities
@@ -79,7 +82,7 @@ class LaserDopplerVibrometer:
             amplitudes: 振幅陣列
         """
         return self.vibration_model.get_frequency_response(
-            self.params.sampling_rate,
+            self.system_params.sampling_rate,
             duration
         )
     
@@ -99,7 +102,7 @@ class LaserDopplerVibrometer:
         return {
             "snr": snr,
             "spot_size": spot_size,
-            "max_velocity": self.params.wavelength * self.params.sampling_rate / 4,
+            "max_velocity": self.system_params.wavelength * self.system_params.sampling_rate / 4,
             "spatial_resolution": spot_size
         }
     
@@ -112,6 +115,85 @@ class LaserDopplerVibrometer:
         """
         return {
             "optical_parameters": self.optical_system.get_system_parameters(),
-            "system_parameters": self.params.get_parameters_dict(),
+            "system_parameters": self.system_params.get_parameters_dict(),
             "material_properties": self.material.__dict__
         }
+    
+    def analyze_vibration(self, x: float, y: float) -> Dict[str, Any]:
+        """分析指定點的振動"""
+        duration = self.system_params.measurement_time
+        time_points = np.linspace(0, duration, int(self.system_params.sampling_rate * duration))
+        
+        # 計算振動響應
+        displacement, velocity = self.vibration_model.calculate_surface_response(x, y, time_points)
+        
+        # 計算頻譜
+        frequencies, amplitudes = self.vibration_model.get_frequency_response(
+            self.system_params.sampling_rate,
+            duration
+        )
+        
+        # 計算統計量
+        diagnostics = {
+            'displacement_stats': {
+                'max': np.max(np.abs(displacement)),
+                'rms': np.sqrt(np.mean(displacement**2))
+            },
+            'velocity_stats': {
+                'max': np.max(np.abs(velocity)),
+                'rms': np.sqrt(np.mean(velocity**2))
+            }
+        }
+        
+        return {
+            'time': time_points,
+            'displacement': displacement,
+            'velocity': velocity,
+            'frequencies': frequencies,
+            'amplitudes': amplitudes,
+            'diagnostics': diagnostics
+        }
+    
+    def plot_comprehensive_analysis(self) -> None:
+        """繪製綜合分析圖"""
+        # 測量中心點
+        x, y = 0, 0
+        results = self.analyze_vibration(x, y)
+        
+        # 創建子圖
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
+        
+        # 位移時域圖
+        ax1.plot(results['time'], results['displacement']*1e9)
+        ax1.set_xlabel('時間 (s)')
+        ax1.set_ylabel('位移 (nm)')
+        ax1.set_title('位移時域響應')
+        ax1.grid(True)
+        
+        # 速度時域圖
+        ax2.plot(results['time'], results['velocity']*1e3)
+        ax2.set_xlabel('時間 (s)')
+        ax2.set_ylabel('速度 (mm/s)')
+        ax2.set_title('��度時域響應')
+        ax2.grid(True)
+        
+        # 頻譜圖
+        ax3.plot(results['frequencies'], results['amplitudes'])
+        ax3.set_xlabel('頻率 (Hz)')
+        ax3.set_ylabel('振幅')
+        ax3.set_title('頻率響應')
+        ax3.grid(True)
+        
+        # 測量品質指標
+        quality = self.get_measurement_quality(self.system_params.working_distance)
+        ax4.axis('off')
+        quality_text = '\n'.join([
+            f"SNR: {quality['snr']:.1f} dB",
+            f"空間解析度: {quality['spatial_resolution']*1e6:.1f} μm",
+            f"最大可測速度: {quality['max_velocity']*1e3:.1f} mm/s"
+        ])
+        ax4.text(0.1, 0.5, quality_text, fontsize=10)
+        ax4.set_title('測量品質指標')
+        
+        plt.tight_layout()
+        plt.show()

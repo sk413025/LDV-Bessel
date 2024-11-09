@@ -8,19 +8,30 @@ def main():
     # 創建材料實例
     material = MaterialProperties.create_cardboard()
     
+    # 盒子尺寸
+    box_dimensions = {
+        'length': 0.1,   # 10cm
+        'width': 0.1,    # 10cm
+        'thickness': 0.001  # 1mm
+    }
+    
     # 使用傳統模態分析
     ldv_classical = LaserDopplerVibrometer(
         material=material,
-        modal_analyzer=ClassicalModalAnalysis
+        modal_analyzer=ClassicalModalAnalysis,
+        analysis_type="classical"
     )
+    ldv_classical.setup_measurement(box_dimensions)
     print("\n使用傳統模態分析...")
     ldv_classical.plot_comprehensive_analysis()
     
     # 使用Bessel模態分析
     ldv_bessel = LaserDopplerVibrometer(
         material=material,
-        modal_analyzer=BesselModalAnalysis
+        modal_analyzer=BesselModalAnalysis,
+        analysis_type="bessel"
     )
+    ldv_bessel.setup_measurement(box_dimensions)
     print("\n使用Bessel模態分析...")
     ldv_bessel.plot_comprehensive_analysis()
     
