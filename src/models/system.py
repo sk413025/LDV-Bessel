@@ -26,7 +26,7 @@ class SystemParameters:
         self.scan_angle = np.deg2rad(10)  # 掃描角度 [rad]
         
         # 聲學參數
-        self.acoustic_pressure = 0.2    # 聲壓 [Pa]
+        self.acoustic_pressure = 0.1    # 聲壓 [Pa]
         self.theta_incidence = np.deg2rad(30)  # 入射角度 [rad]
 
         self.validate_parameters()

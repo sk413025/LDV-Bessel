@@ -26,6 +26,11 @@ class ModalAnalysisBase(ABC):
         """計算模態響應"""
         pass
 
+    @abstractmethod
+    def calculate_single_mode_response(self, x: float, y: float, t: float, mode_idx: int) -> float:
+        """計算單一模態響應"""
+        pass
+
 class ClassicalModalAnalysis(ModalAnalysisBase):
     def __init__(self, params: SystemParameters, box_dimensions: Dict):
         super().__init__(params)
@@ -53,7 +58,7 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         
         # 記錄關鍵參數
         logger.info(f"彎曲剛度: {self.bending_stiffness:.2e} N·m")
-        logger.info(f"單位面積質量: {self.mass_per_area:.2e} kg/m²")
+        logger.info(f"單位��積質量: {self.mass_per_area:.2e} kg/m²")
 
     def calculate_modal_frequencies(self) -> List[float]:
         """計算與1000Hz附近的模態頻率"""
@@ -61,9 +66,9 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         L = self.box_dimensions['length']
         W = self.box_dimensions['width']
         
-        # 只計算1000Hz附近的頻率（±200Hz）
+        # 只計算1000Hz附近的頻率（±250Hz）
         target_freq = self.params.f_acoustic  # 1000Hz
-        freq_range = 200  # Hz
+        freq_range = 250  # Hz
         
         for m in range(1, 4):
             for n in range(1, 4):
@@ -92,43 +97,52 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         
         return shapes
 
+    def calculate_single_mode_response(self, x: float, y: float, t: float, mode_idx: int) -> float:
+        """計算單一模態響應"""
+        if not hasattr(self, 'modal_frequencies'):
+            self.modal_frequencies = self.calculate_modal_frequencies()
+            self.modal_shapes = self.calculate_modal_shapes()
+            
+        if mode_idx >= len(self.modal_frequencies):
+            return 0.0
+            
+        freq = self.modal_frequencies[mode_idx]
+        shape_func = self.modal_shapes[mode_idx]
+        
+        # 計算有效聲壓 [Pa]
+        p_eff = self.acoustic_pressure * np.cos(self.theta_incidence)
+        
+        # 激勵頻率 [rad/s]
+        omega = 2 * np.pi * self.params.f_acoustic
+        
+        # 計算響應
+        zeta = self.params.material.damping_ratio
+        shape_value = shape_func(x, y)
+        freq_ratio = freq / self.params.f_acoustic
+        
+        # 動態放大因子
+        beta = 1 / ((1 - freq_ratio**2)**2 + (2*zeta*freq_ratio)**2)**0.5
+        
+        # 相位角 [rad]
+        phase = np.arctan2(2*zeta*freq_ratio, 1 - freq_ratio**2)
+        
+        # 計算響應 [m]
+        mode_response = (p_eff * shape_value * beta / 
+                        (self.mass_per_area * omega**2) * 
+                        np.sin(omega * t - phase))
+        
+        return mode_response
+
     def calculate_modal_response(self, x: float, y: float, t: float) -> float:
-        """計算強制振動響應"""
+        """計算總模態響應"""
         if not hasattr(self, 'modal_frequencies'):
             self.modal_frequencies = self.calculate_modal_frequencies()
             self.modal_shapes = self.calculate_modal_shapes()
 
-        # 1. 計算有效聲壓 [Pa]
-        p_eff = self.acoustic_pressure * np.cos(self.theta_incidence)
-        
-        # 2. 激勵頻率 [rad/s]
-        omega = 2 * np.pi * self.params.f_acoustic
-        
-        # 3. 計算振動響應
-        total_response = 0
-        zeta = self.params.material.damping_ratio
-        
-        for freq, shape_func in zip(self.modal_frequencies, self.modal_shapes):
-            # 只考慮共振頻率附近的響應
-            if abs(freq - self.params.f_acoustic) < 100:  # [Hz]
-                # 模態形狀
-                shape_value = shape_func(x, y)
-                
-                # 頻率比
-                freq_ratio = freq / self.params.f_acoustic
-                
-                # 動態放大因子
-                beta = 1 / ((1 - freq_ratio**2)**2 + (2*zeta*freq_ratio)**2)**0.5
-                
-                # 相位角 [rad]
-                phase = np.arctan2(2*zeta*freq_ratio, 1 - freq_ratio**2)
-                
-                # 計算響應 [m]
-                mode_response = (p_eff * shape_value * beta / 
-                               (self.mass_per_area * omega**2) * 
-                               np.sin(omega * t - phase))
-                
-                total_response += mode_response
+        total_response = 0.0
+        for idx in range(len(self.modal_frequencies)):
+            if abs(self.modal_frequencies[idx] - self.params.f_acoustic) < 200:  # [Hz]
+                total_response += self.calculate_single_mode_response(x, y, t, idx)
         
         # 記錄響應
         if (t - self.last_log_time) >= self.log_interval:
@@ -200,80 +214,59 @@ class BesselModalAnalysis(ModalAnalysisBase):
         self.modal_shapes = shapes
         return shapes
 
-    def calculate_modal_response(self, x: float, y: float, t: float) -> float:
+    def calculate_single_mode_response(self, x: float, y: float, t: float, mode_idx: int) -> float:
+        """計算單一模態響應"""
         if not self.modal_frequencies or not self.modal_shapes:
             self.modal_frequencies = self.calculate_modal_frequencies()
             self.modal_shapes = self.calculate_modal_shapes()
-        
-        print("\n模態響應計算驗證：")
-        print(f"計算點: x={x:.3f}m, y={y:.3f}m, t={t:.3f}s")
-        
-        modal_response = 0
-        
-        # 只在特定時間間隔記錄
-        if (t - self.last_log_time) >= self.log_interval:
-            logger.info("Bessel響應計算 t=%.2f: (%.3f, %.3f) m", t, x, y)
-            self.last_log_time = t
-            log_details = True
-        else:
-            log_details = False
-        
-        for idx, (freq, shape_func) in enumerate(zip(self.modal_frequencies, self.modal_shapes)):
-            omega_modal = 2 * np.pi * freq
             
-            # 計算並驗證各項因子
-            shape_value = shape_func(x, y)
-            participation_factor = self.params.Q_factor/(1 + abs(freq - self.params.f_acoustic))
+        if mode_idx >= len(self.modal_frequencies):
+            return 0.0
             
-            zeta = self.params.material.damping_ratio
-            omega = 2 * np.pi * self.params.f_acoustic
-            modal_phase = np.arctan2(2*zeta*omega*omega_modal, 
-                                   omega_modal**2 - omega**2)
-            
-            # 計算時域響應項
-            damping_term = np.exp(-zeta * omega_modal * t)
-            oscillation_term = np.sin(omega_modal * t + modal_phase)
-            
-        # 單個模態的貢獻
-        max_amplitude = 1e-6  # 1 μm
-        mode_contribution = (participation_factor * shape_value * 
-                           damping_term * oscillation_term)
+        freq = self.modal_frequencies[mode_idx]
+        shape_func = self.modal_shapes[mode_idx]
         
-        # 打印詳細資訊
-        print(f"\n模態 {idx+1}:")
-        print(f"  頻率: {freq:.2f} Hz")
-        print(f"  模態形狀值: {shape_value:.2e}")
-        print(f"  參與因子: {participation_factor:.2e}")
-        print(f"  衰減項: {damping_term:.2e}")
-        print(f"  振盪項: {oscillation_term:.2e}")
-        print(f"  模態貢獻: {mode_contribution:.2e}")
+        omega_modal = 2 * np.pi * freq
+        shape_value = shape_func(x, y)
+        participation_factor = self.params.Q_factor/(1 + abs(freq - self.params.f_acoustic))
         
-        modal_response += mode_contribution
+        zeta = self.params.material.damping_ratio
+        omega = 2 * np.pi * self.params.f_acoustic
+        modal_phase = np.arctan2(2*zeta*omega*omega_modal, 
+                               omega_modal**2 - omega**2)
+        
+        # 計算時域響應項
+        damping_term = np.exp(-zeta * omega_modal * t)
+        oscillation_term = np.sin(omega_modal * t + modal_phase)
+        
+        # 計算響應
+        mode_response = participation_factor * shape_value * damping_term * oscillation_term
         
         # 添加位移限制
         max_displacement = self.box_dimensions['thickness'] * 0.1
-        modal_response = np.clip(modal_response, -max_displacement, max_displacement)
+        mode_response = np.clip(mode_response, -max_displacement, max_displacement)
         
+        return mode_response
+
+    def calculate_modal_response(self, x: float, y: float, t: float) -> float:
+        """計算總模態響應"""
+        if not self.modal_frequencies or not self.modal_shapes:
+            self.modal_frequencies = self.calculate_modal_frequencies()
+            self.modal_shapes = self.calculate_modal_shapes()
+            
+        total_response = 0.0
+        log_details = (t - self.last_log_time) >= self.log_interval
+            
+        for idx in range(len(self.modal_frequencies)):
+            mode_response = self.calculate_single_mode_response(x, y, t, idx)
+            total_response += mode_response
+            
+            if log_details:
+                freq = self.modal_frequencies[idx]
+                logger.debug(f"模態 {idx+1} 響應: {mode_response*1e6:.2f} μm (頻率: {freq:.1f} Hz)")
+                
         if log_details:
-            logger.info("Bessel最終響應: %.2e m\n", modal_response)
-        
-        print(f"\n總響應: {modal_response:.2e} m")
-        return modal_response
-        
-        for i, (freq, shape) in enumerate(zip(self.modal_frequencies, self.modal_shapes)):
-            # 考慮阻尼效應
-            omega = 2 * np.pi * freq
-            zeta = self.params.material.damping_ratio
-            damping = np.exp(-zeta * omega * t)
+            logger.info(f"總響應: {total_response*1e6:.2f} μm")
+            self.last_log_time = t
             
-            # 改進的參與因子計算
-            participation = 1.0/((i + 1) * np.sqrt(1 + (freq/self.params.f_acoustic - 1)**2))
-            participation = min(participation, 1.0)
-            
-            # 計算響應
-            response = participation * shape(x, y) * damping * np.sin(omega * t)
-            response = np.clip(response, -max_amplitude, max_amplitude)
-            
-            modal_response += response
-            
-        return modal_response
+        return total_response
