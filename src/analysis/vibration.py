@@ -100,11 +100,14 @@ class SurfaceVibrationModel:
         # 增加模態響應分析的記錄
         logger.debug("\n模態分析統計:")
         mode_contributions = []
-        for idx, freq in enumerate(self.frequencies):
-            response = np.array([self.modal_analysis.calculate_modal_response(x, y, t) for t in time_points])
+        for idx in range(len(self.frequencies)):
+            response = np.array([
+                self.modal_analysis.calculate_single_mode_response(x, y, t, idx)
+                for t in time_points
+            ])
             contribution = np.sqrt(np.mean(response**2))
-            mode_contributions.append((idx+1, freq, contribution))
-            logger.debug(f"模態 {idx+1} (頻率: {freq:.1f} Hz):")
+            mode_contributions.append((idx+1, self.frequencies[idx], contribution))
+            logger.debug(f"模態 {idx+1} (頻率: {self.frequencies[idx]:.1f} Hz):")
             logger.debug(f"  RMS貢獻: {contribution*1e9:.2f} nm")
             
         # 排序找出主要貢獻模態

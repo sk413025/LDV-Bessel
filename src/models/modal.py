@@ -26,6 +26,11 @@ class ModalAnalysisBase(ABC):
         """計算模態響應"""
         pass
 
+    @abstractmethod
+    def calculate_single_mode_response(self, x: float, y: float, t: float, mode_idx: int) -> float:
+        """計算單一模態響應"""
+        pass
+
 class ClassicalModalAnalysis(ModalAnalysisBase):
     def __init__(self, params: SystemParameters, box_dimensions: Dict):
         super().__init__(params)
@@ -61,9 +66,9 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         L = self.box_dimensions['length']
         W = self.box_dimensions['width']
         
-        # 只計算1000Hz附近的頻率（±200Hz）
+        # 只計算1000Hz附近的頻率（±250Hz）
         target_freq = self.params.f_acoustic  # 1000Hz
-        freq_range = 200  # Hz
+        freq_range = 250  # Hz
         
         for m in range(1, 4):
             for n in range(1, 4):
@@ -110,7 +115,7 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         
         for freq, shape_func in zip(self.modal_frequencies, self.modal_shapes):
             # 只考慮共振頻率附近的響應
-            if abs(freq - self.params.f_acoustic) < 100:  # [Hz]
+            if abs(freq - self.params.f_acoustic) < 200:  # [Hz]
                 # 模態形狀
                 shape_value = shape_func(x, y)
                 
@@ -142,6 +147,42 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         kinetic = 0.5 * modal_mass * (omega * mode_response)**2
         potential = 0.5 * modal_mass * omega**2 * mode_response**2
         return abs(kinetic - potential) < 1e-6 * max(kinetic, potential)
+
+    def calculate_single_mode_response(self, x: float, y: float, t: float, mode_idx: int) -> float:
+        """計算單一模態響應"""
+        if not hasattr(self, 'modal_frequencies'):
+            self.modal_frequencies = self.calculate_modal_frequencies()
+            self.modal_shapes = self.calculate_modal_shapes()
+            
+        if mode_idx >= len(self.modal_frequencies):
+            return 0.0
+            
+        freq = self.modal_frequencies[mode_idx]
+        shape_func = self.modal_shapes[mode_idx]
+        
+        # 計算有效聲壓 [Pa]
+        p_eff = self.acoustic_pressure * np.cos(self.theta_incidence)
+        
+        # 激勵頻率 [rad/s]
+        omega = 2 * np.pi * self.params.f_acoustic
+        
+        # 計算響應
+        zeta = self.params.material.damping_ratio
+        shape_value = shape_func(x, y)
+        freq_ratio = freq / self.params.f_acoustic
+        
+        # 動態放大因子
+        beta = 1 / ((1 - freq_ratio**2)**2 + (2*zeta*freq_ratio)**2)**0.5
+        
+        # 相位角 [rad]
+        phase = np.arctan2(2*zeta*freq_ratio, 1 - freq_ratio**2)
+        
+        # 計算響應 [m]
+        mode_response = (p_eff * shape_value * beta / 
+                        (self.mass_per_area * omega**2) * 
+                        np.sin(omega * t - phase))
+        
+        return mode_response
 
 class BesselModalAnalysis(ModalAnalysisBase):
     """Bessel模態分析實現"""
@@ -277,3 +318,33 @@ class BesselModalAnalysis(ModalAnalysisBase):
             modal_response += response
             
         return modal_response
+
+    def calculate_single_mode_response(self, x: float, y: float, t: float, mode_idx: int) -> float:
+        """計算單一模態響應"""
+        if not self.modal_frequencies or not self.modal_shapes:
+            self.modal_frequencies = self.calculate_modal_frequencies()
+            self.modal_shapes = self.calculate_modal_shapes()
+            
+        if mode_idx >= len(self.modal_frequencies):
+            return 0.0
+            
+        freq = self.modal_frequencies[mode_idx]
+        shape_func = self.modal_shapes[mode_idx]
+        
+        omega_modal = 2 * np.pi * freq
+        shape_value = shape_func(x, y)
+        participation_factor = self.params.Q_factor/(1 + abs(freq - self.params.f_acoustic))
+        
+        zeta = self.params.material.damping_ratio
+        omega = 2 * np.pi * self.params.f_acoustic
+        modal_phase = np.arctan2(2*zeta*omega*omega_modal, 
+                               omega_modal**2 - omega**2)
+        
+        # 計算時域響應項
+        damping_term = np.exp(-zeta * omega_modal * t)
+        oscillation_term = np.sin(omega_modal * t + modal_phase)
+        
+        # 計算響應
+        mode_response = participation_factor * shape_value * damping_term * oscillation_term
+        
+        return mode_response
