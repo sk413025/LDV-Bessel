@@ -31,7 +31,7 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         super().__init__(params)
         self.box_dimensions = box_dimensions
         self._initialize_parameters()
-        self.log_interval = 1.0
+        self.log_interval = 0.1
         self.last_log_time = 0.0
 
     def _initialize_parameters(self):

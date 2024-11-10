@@ -9,7 +9,7 @@ class SystemParameters:
     material: MaterialProperties
     f_acoustic: float = 1000.0      # 聲波頻率 [Hz]
     sampling_rate: float = 1e4      # 採樣率 [Hz]
-    measurement_time: float = 1.0   # 測量時間 [s]
+    measurement_time: float = 0.1   # 測量時間 [s]
 
     def __post_init__(self):
         """初始化後的額外設置"""

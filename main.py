@@ -1,42 +1,37 @@
-from src.models.material import MaterialProperties
+from src.models.material import MaterialProperties, MaterialFactory
 from src.models.modal import ClassicalModalAnalysis
 from src.models.modal import BesselModalAnalysis
 from src.analysis.vibration import SurfaceVibrationModel
 from src.ldv import LaserDopplerVibrometer
 
 def main():
-    # 創建材料實例
-    material = MaterialProperties.create_cardboard()
+    # 使用材料工廠創建不同材料
+    cardboard = MaterialFactory.create('cardboard')
+    aluminum = MaterialFactory.create('metal', metal_type='aluminum')
+    steel = MaterialFactory.create('metal', metal_type='steel')
     
-    # 盒子尺寸
-    box_dimensions = {
-        'length': 0.1,   # 10cm
-        'width': 0.1,    # 10cm
-        'thickness': 0.001  # 1mm
-    }
+    # 測試不同材料
+    test_materials = [
+        ('紙箱', cardboard),
+        # ('鋁板', aluminum),
+        # ('鋼板', steel)
+    ]
     
-    # 使用傳統模態分析
-    ldv_classical = LaserDopplerVibrometer(
-        material=material,
-        modal_analyzer=ClassicalModalAnalysis,
-        analysis_type="classical"
-    )
-    ldv_classical.setup_measurement(box_dimensions)
-    print("\n使用傳統模態分析...")
-    ldv_classical.plot_comprehensive_analysis()
-    
-    # # 使用Bessel模態分析
-    # ldv_bessel = LaserDopplerVibrometer(
-    #     material=material,
-    #     modal_analyzer=BesselModalAnalysis,
-    #     analysis_type="bessel"
-    # )
-    # ldv_bessel.setup_measurement(box_dimensions)
-    # print("\n使用Bessel模態分析...")
-    # ldv_bessel.plot_comprehensive_analysis()
-    
-    # # 比較兩種方法結果
-    # compare_results(ldv_classical, ldv_bessel)
+    for material_name, material in test_materials:
+        print(f"\n測試 {material_name} 振動響應...")
+        ldv = LaserDopplerVibrometer(
+            material=material,
+            modal_analyzer=ClassicalModalAnalysis,
+            analysis_type="classical"
+        )
+        
+        ldv.setup_measurement({
+            'length': 0.1,
+            'width': 0.1,
+            'thickness': 0.001
+        })
+        
+        ldv.plot_comprehensive_analysis()
 
 def compare_results(classical, bessel):
     """比較兩種模態分析方法的結果"""

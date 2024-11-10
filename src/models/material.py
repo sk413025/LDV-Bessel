@@ -1,119 +1,117 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Type
 from ..utils.verification import PhysicsVerification
 from ..utils.logger import logger
 import numpy as np
 
 @dataclass
-class MaterialProperties:
-    """材料物理特性"""
-    density: float          # [kg/m³]
-    youngs_modulus: float  # [Pa]
-    sound_speed: float     # [m/s]
-    damping_ratio: float   # 阻尼比
-    surface_roughness: float  # [m]
-    reflectivity: float    # 反射率
-    acoustic_impedance: float  # [kg/m²s]
-    poisson_ratio: float = 0.3  # 泊松比
-    yield_strain: float = 0.001  # 降伏應變
+class MaterialProperties(ABC):
+    """材料物理特性基礎類別"""
+    density: float          
+    youngs_modulus: float  
+    damping_ratio: float   
+    poisson_ratio: float
+    surface_roughness: float
+    reflectivity: float
     
-    def __post_init__(self):
-        """初始化後驗證材料參數"""
-        # 驗證材料穩定性
-        verifications = self.verify_material_stability()
+    @abstractmethod
+    def get_vibration_parameters(self) -> Dict[str, float]:
+        """獲取振動相關參數"""
+        pass
+    
+    @abstractmethod
+    def get_optical_parameters(self) -> Dict[str, float]:
+        """獲取光學相關參數"""
+        pass
+
+@dataclass
+class CardboardMaterial(MaterialProperties):
+    """紙箱材料特性"""
+    def __init__(self, **kwargs):
+        super().__init__(
+            density=300,          # [kg/m³]
+            youngs_modulus=2e9,   # [Pa]
+            damping_ratio=0.5,    # 紙箱結構阻尼
+            poisson_ratio=0.3,    # 紙材典型值
+            surface_roughness=5e-6,  # [m]
+            reflectivity=0.3      # 紙箱表面反射率
+        )
+        # self._verify_parameters()
         
-        # 使用 logger 打印所有驗證結果
-        logger.info("\n材料參數驗證結果：")
-        for name, result in verifications.items():
-            status = "✓ 通過" if result.is_valid else "✗ 失敗"
-            logger.info(f"{name}: {status}")
-            logger.debug(f"  當前值: {result.actual_value:.2e}")
-            logger.debug(f"  預期範圍: ({result.valid_range[0]:.2e}, {result.valid_range[1]:.2e})")
-            logger.debug(f"  說明: {result.description}")
-        
-        # 檢查是否有任何驗證失敗
-        failed_verifications = {
-            name: result for name, result in verifications.items() 
-            if not result.is_valid
+    def get_vibration_parameters(self) -> Dict[str, float]:
+        return {
+            'density': self.density,
+            'youngs_modulus': self.youngs_modulus,
+            'damping_ratio': self.damping_ratio,
+            'poisson_ratio': self.poisson_ratio
         }
         
-        if failed_verifications:
-            warnings = []
-            for name, result in failed_verifications.items():
-                warnings.append(
-                    f"{name}: actual_value={result.actual_value}, "
-                    f"valid_range={result.valid_range}, "
-                    f"description='{result.description}'"  # Changed from 'message' to 'description'
-                )
-            raise ValueError(
-                "Material properties validation failed:\n" + 
-                "\n".join(warnings)
-            )
+    def get_optical_parameters(self) -> Dict[str, float]:
+        return {
+            'surface_roughness': self.surface_roughness,
+            'reflectivity': self.reflectivity
+        }
+
+@dataclass
+class MetalMaterial(MaterialProperties):
+    """金屬材料特性"""
+    def __init__(self, metal_type: str = 'aluminum'):
+        properties = METAL_PROPERTIES.get(metal_type, METAL_PROPERTIES['aluminum'])
+        super().__init__(**properties)
+        self.metal_type = metal_type
+        # self._verify_parameters()
+        
+    def get_vibration_parameters(self) -> Dict[str, float]:
+        return {
+            'density': self.density,
+            'youngs_modulus': self.youngs_modulus,
+            'damping_ratio': self.damping_ratio,
+            'poisson_ratio': self.poisson_ratio
+        }
+        
+    def get_optical_parameters(self) -> Dict[str, float]:
+        return {
+            'surface_roughness': self.surface_roughness,
+            'reflectivity': self.reflectivity
+        }
+
+# 材料屬性數據庫
+METAL_PROPERTIES = {
+    'aluminum': {
+        'density': 2700,        # [kg/m³]
+        'youngs_modulus': 69e9, # [Pa]
+        'damping_ratio': 0.002, # 典型值
+        'poisson_ratio': 0.33,
+        'surface_roughness': 0.8e-6,  # [m]
+        'reflectivity': 0.91
+    },
+    'steel': {
+        'density': 7850,
+        'youngs_modulus': 200e9,
+        'damping_ratio': 0.001,
+        'poisson_ratio': 0.29,
+        'surface_roughness': 0.4e-6,
+        'reflectivity': 0.95
+    }
+}
+
+class MaterialFactory:
+    """材料工廠類"""
+    _materials: Dict[str, Type[MaterialProperties]] = {
+        'cardboard': CardboardMaterial,
+        'metal': MetalMaterial
+    }
     
     @classmethod
-    def create_cardboard(cls):
-        """創建紙箱材料特性"""
-        # 更新紙板材料參數
-        density = 300  # kg/m³ (保持不變)
-        E = 2e9       # Pa (保持不變)
+    def create(cls, material_type: str, **kwargs) -> MaterialProperties:
+        """創建材料實例
         
-        # 使用理論公式計算聲速
-        theoretical_sound_speed = np.sqrt(E/density)  # 約2582 m/s
-        
-        # 考慮到實際紙板的多層結構和非均質性，使用較低的修正係數
-        sound_speed = theoretical_sound_speed * 0.6  # 約1550 m/s
-        
-        return cls(
-            density=density,
-            youngs_modulus=E,
-            sound_speed=sound_speed,  # 更新的聲速值
-            damping_ratio=0.5,
-            surface_roughness=5e-6,
-            reflectivity=0.3,
-            acoustic_impedance=density * sound_speed,
-            poisson_ratio=0.3,
-            yield_strain=0.001
-        )
-    
-    def verify_material_stability(self) -> Dict[str, PhysicsVerification]:
-        """驗證材料參數的物理穩定性"""
-        verifications = {}
-        
-        # 聲速驗證 - 使用更寬鬆的範圍
-        theoretical_sound_speed = np.sqrt(self.youngs_modulus / self.density)
-        sound_speed_valid = 0.3 * theoretical_sound_speed < self.sound_speed < 2 * theoretical_sound_speed
-        verifications['sound_speed'] = PhysicsVerification(
-            is_valid=sound_speed_valid,
-            actual_value=self.sound_speed,
-            valid_range=(0.3 * theoretical_sound_speed, 2 * theoretical_sound_speed),
-            description="聲速與材料特性相符性"
-        )
-        
-        # 泊松比物理限制
-        poisson_valid = -1.0 < self.poisson_ratio < 0.5
-        verifications['poisson_ratio'] = PhysicsVerification(
-            is_valid=poisson_valid,
-            actual_value=self.poisson_ratio,
-            valid_range=(-1.0, 0.5),
-            description="��松比物理限制"  # Changed from 'message' to 'description'
-        )
-        
-        # 阻尼比驗證
-        damping_valid = 0 < self.damping_ratio < 1.0
-        verifications['damping'] = PhysicsVerification(
-            is_valid=damping_valid,
-            actual_value=self.damping_ratio,
-            valid_range=(0, 1.0),
-            description="阻尼比合理性"  # Changed from 'message' to 'description'
-        )
-        
-        # 反射率驗證
-        reflectivity_valid = 0 < self.reflectivity <= 1.0
-        verifications['reflectivity'] = PhysicsVerification(
-            is_valid=reflectivity_valid,
-            actual_value=self.reflectivity,
-            valid_range=(0, 1.0),
-            description="反射率物理限制"  # Changed from 'message' to 'description'
-        )
-        
-        return verifications
+        Args:
+            material_type: 材料類型 ('cardboard', 'metal')
+            **kwargs: 材料特定參數
+        """
+        if material_type not in cls._materials:
+            raise ValueError(f"未支援的材料類型: {material_type}")
+            
+        return cls._materials[material_type](**kwargs)
