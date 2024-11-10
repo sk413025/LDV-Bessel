@@ -21,8 +21,8 @@ def main():
         print(f"\n測試 {material_name} 振動響應...")
         ldv = LaserDopplerVibrometer(
             material=material,
-            modal_analyzer=ClassicalModalAnalysis,
-            analysis_type="classical"
+            modal_analyzer=BesselModalAnalysis,
+            analysis_type="bessel"
         )
         
         ldv.setup_measurement({

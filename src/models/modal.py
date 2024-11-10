@@ -58,7 +58,7 @@ class ClassicalModalAnalysis(ModalAnalysisBase):
         
         # 記錄關鍵參數
         logger.info(f"彎曲剛度: {self.bending_stiffness:.2e} N·m")
-        logger.info(f"單位��積質量: {self.mass_per_area:.2e} kg/m²")
+        logger.info(f"單位���積質量: {self.mass_per_area:.2e} kg/m²")
 
     def calculate_modal_frequencies(self) -> List[float]:
         """計算與1000Hz附近的模態頻率"""
@@ -162,17 +162,45 @@ class BesselModalAnalysis(ModalAnalysisBase):
     def __init__(self, params: SystemParameters, box_dimensions: Dict):
         super().__init__(params)
         self.box_dimensions = box_dimensions
-        self.max_modes = (3, 3)
-        self._setup_bessel_parameters()
-        self.log_interval = 1.0
+        self.max_modes = (2,2)
+        self.modal_frequencies = []
+        self.modal_shapes = []
+        self.log_interval = 0.2
         self.last_log_time = 0.0
         
-    def _setup_bessel_parameters(self):
-        self.modal_frequencies = []
-        self.bessel_zeros = []
-        self.radius = min(self.box_dimensions['length'], 
-                         self.box_dimensions['width'])/2
+        # 添加聲波和邊界參數
+        self.boundary_coefficient = 1.3
+        self.boundary_factor = None
+        self.effective_radius = None
+        self.min_freq = None
+        self.acoustic_pressure = getattr(params, 'acoustic_pressure', 0.1)  # [Pa]
+        self.theta_incidence = getattr(params, 'theta_incidence', np.deg2rad(30))
         
+        # 進行參數設置
+        self._setup_bessel_parameters()
+        
+    def _setup_bessel_parameters(self):
+        """設置貝塞爾參數"""
+        self.bessel_zeros = []
+        
+        # 計算材料相關參數
+        h = self.box_dimensions['thickness']
+        rho = self.params.material.density
+        E = self.params.material.youngs_modulus
+        nu = self.params.material.poisson_ratio
+        self.bending_stiffness = (E * h**3)/(12 * (1 - nu**2))
+        self.mass_per_area = rho * h
+        
+        # 使用實際尺寸計算有效半徑和特徵頻率
+        L = self.box_dimensions['length']
+        W = self.box_dimensions['width']
+        self.effective_radius = np.sqrt(L * W) / 2
+        self.boundary_factor = min(L, W) / max(L, W)
+        
+        # 計算最小頻率限制
+        self.min_freq = np.sqrt(self.bending_stiffness/(self.mass_per_area * self.effective_radius**4))
+        
+        # 計算貝塞爾函數零點
         for m in range(self.max_modes[0]):
             zeros = []
             for n in range(1, self.max_modes[1] + 1):
@@ -181,45 +209,69 @@ class BesselModalAnalysis(ModalAnalysisBase):
                     x = x - jv(m, x)/jv(m-1, x)
                 zeros.append(x)
             self.bessel_zeros.append(zeros)
+        
+        # 確保初始化時計算模態
+        self.modal_frequencies = self.calculate_modal_frequencies()
+        self.modal_shapes = self.calculate_modal_shapes()
+        
+        logger.info(f"有效半徑: {self.effective_radius*1000:.1f} mm")
+        logger.info(f"邊界修正因子: {self.boundary_factor:.3f}")
+        logger.info(f"最小頻率: {self.min_freq:.1f} Hz")
+        logger.info(f"計算得到模態數: {len(self.modal_frequencies)}")
 
     def calculate_modal_frequencies(self) -> List[float]:
+        """計算模態頻率"""
         frequencies = []
-        h = self.box_dimensions['thickness']
-        rho = self.params.material.density
-        E = self.params.material.youngs_modulus
-        nu = self.params.material.poisson_ratio
-        D = (E * h**3)/(12 * (1 - nu**2))
         
         for m, zeros in enumerate(self.bessel_zeros):
             for alpha in zeros:
-                omega = (alpha/self.radius)**2 * np.sqrt(D/(rho * h))
+                # 加入邊界修正係數 κ
+                omega = self.boundary_coefficient * (alpha/self.effective_radius)**2 * np.sqrt(
+                    self.bending_stiffness/(self.mass_per_area))
                 freq = omega/(2*np.pi)
-                frequencies.append(freq)
+                if freq >= self.min_freq:  # 添加最小頻率限制
+                    frequencies.append(freq)
         
         self.modal_frequencies = sorted(frequencies)
         return self.modal_frequencies
 
     def calculate_modal_shapes(self) -> List[callable]:
+        """計算模態形狀"""
         shapes = []
+        L = self.box_dimensions['length']
+        W = self.box_dimensions['width']
+        
         for m, zeros in enumerate(self.bessel_zeros):
             for alpha in zeros:
-                def shape_func(x, y, m=m, alpha=alpha):
-                    r = np.sqrt(x**2 + y**2)
-                    theta = np.arctan2(y, x)
-                    if r <= self.radius:
-                        return jv(m, alpha*r/self.radius) * np.cos(m*theta)
+                def shape_func(x, y, m=m, alpha=alpha, L=L, W=W):
+                    # 將坐標歸一化到 [-1, 1] 範圍
+                    x_norm = 2 * x / L - 1
+                    y_norm = 2 * y / W - 1
+                    
+                    # 在矩形邊界內檢查
+                    if abs(x_norm) <= 1 and abs(y_norm) <= 1:
+                        r = np.sqrt(x_norm**2 + y_norm**2)
+                        theta = np.arctan2(y_norm, x_norm)
+                        
+                        # 加入橢圓修正
+                        r_scaled = r * self.effective_radius * (
+                            1 + self.boundary_factor * np.cos(2*theta))
+                        
+                        # 基本模態形狀
+                        mode_shape = jv(m, alpha * r_scaled / self.effective_radius) * np.cos(m*theta)
+                        
+                        # 改進的邊界衰減使用多項式
+                        edge_decay = (1 - x_norm**2)**2 * (1 - y_norm**2)**2
+                        
+                        return mode_shape * edge_decay
                     return 0
+                
                 shapes.append(shape_func)
         
-        self.modal_shapes = shapes
         return shapes
 
     def calculate_single_mode_response(self, x: float, y: float, t: float, mode_idx: int) -> float:
-        """計算單一模態響應"""
-        if not self.modal_frequencies or not self.modal_shapes:
-            self.modal_frequencies = self.calculate_modal_frequencies()
-            self.modal_shapes = self.calculate_modal_shapes()
-            
+        """計算單一模態響應，包含自由振動和強制振動"""
         if mode_idx >= len(self.modal_frequencies):
             return 0.0
             
@@ -227,33 +279,35 @@ class BesselModalAnalysis(ModalAnalysisBase):
         shape_func = self.modal_shapes[mode_idx]
         
         omega_modal = 2 * np.pi * freq
-        shape_value = shape_func(x, y)
-        participation_factor = self.params.Q_factor/(1 + abs(freq - self.params.f_acoustic))
-        
-        zeta = self.params.material.damping_ratio
         omega = 2 * np.pi * self.params.f_acoustic
-        modal_phase = np.arctan2(2*zeta*omega*omega_modal, 
-                               omega_modal**2 - omega**2)
+        shape_value = shape_func(x, y)
         
-        # 計算時域響應項
-        damping_term = np.exp(-zeta * omega_modal * t)
-        oscillation_term = np.sin(omega_modal * t + modal_phase)
+        # 改進的參與因子計算
+        participation_factor = 15.0 * (1 + (freq - self.params.f_acoustic)**2/400)**(-1)
         
-        # 計算響應
-        mode_response = participation_factor * shape_value * damping_term * oscillation_term
+        # 計算響應參數
+        zeta = self.params.material.damping_ratio * 0.01  # 降低阻尼係數
+        p_eff = self.acoustic_pressure * np.cos(self.theta_incidence)
+        modal_phase = np.arctan2(2*zeta*omega*omega_modal, omega_modal**2 - omega**2)
         
-        # 添加位移限制
-        max_displacement = self.box_dimensions['thickness'] * 0.1
+        # 分離自由振動和強制振動
+        free_vibration = np.exp(-zeta * omega_modal * t) * np.sin(omega_modal * t + modal_phase)
+        # forced_vibration = p_eff * np.sin(omega * t) / (self.mass_per_area * 
+        #     ((omega_modal**2 - omega**2)**2 + (2*zeta*omega_modal*omega)**2)**0.5)
+        denominator = ((omega_modal**2 - omega**2)**2 + (2 * zeta * omega_modal * omega)**2)
+        forced_vibration = p_eff * np.sin(omega * t - modal_phase) / (self.mass_per_area * np.sqrt(denominator))
+        
+        # 組合響應
+        mode_response = participation_factor * shape_value * (free_vibration + forced_vibration)
+        
+        # 位移限制
+        max_displacement = self.box_dimensions['thickness'] * 0.015
         mode_response = np.clip(mode_response, -max_displacement, max_displacement)
         
         return mode_response
 
     def calculate_modal_response(self, x: float, y: float, t: float) -> float:
         """計算總模態響應"""
-        if not self.modal_frequencies or not self.modal_shapes:
-            self.modal_frequencies = self.calculate_modal_frequencies()
-            self.modal_shapes = self.calculate_modal_shapes()
-            
         total_response = 0.0
         log_details = (t - self.last_log_time) >= self.log_interval
             
