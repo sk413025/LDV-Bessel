@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from ..utils.verification import PhysicsVerification
 from .material import MaterialProperties
@@ -6,6 +6,7 @@ import numpy as np
 
 @dataclass
 class SystemParameters:
+    """雷射都卜勒振動儀系統參數類"""
     material: MaterialProperties
     f_acoustic: float = 1000.0      # 聲波頻率 [Hz]
     sampling_rate: float = 1e4      # 採樣率 [Hz]
@@ -16,42 +17,23 @@ class SystemParameters:
         if not isinstance(self.material, MaterialProperties):
             raise TypeError("material must be an instance of MaterialProperties")
         
-        # 先定義屬性
-        # ��學參數（單位註釋）
+        # 光學系統參數（單位註釋）
         self.wavelength = 632.8e-9      # HeNe雷射波長 [m]
         self.beam_diameter = 1e-3       # 光束直徑 [m]
         self.optical_power = 1e-3       # 光功率 [W]
-        self.w_0 = self.beam_diameter / 2  # 光束腰半徑 [m]
-        self.z_R = (np.pi * self.w_0**2) / self.wavelength  # 瑞利長度 [m]
-        self.beam_radius = self.beam_diameter / 2  # 光束半徑 [m]
-        # 添加缺少的屬性（單位註釋）
         self.focal_length = 50e-3       # 焦距 [m]
         self.working_distance = 100e-3  # 工作距離 [m]
         self.scan_angle = np.deg2rad(10)  # 掃描角度 [rad]
-
-        # 振動參數
-        self.force_amplification = 1.5
-        self.mass_correction = 0.3
-        self.boundary_factor = 0.8
-        self.acoustic_attenuation = 1.0
-        self.acoustic_pressure = 0.2
         
-        # 添加入射角度參數（單位註釋）
+        # 聲學參數
+        self.acoustic_pressure = 0.2    # 聲壓 [Pa]
         self.theta_incidence = np.deg2rad(30)  # 入射角度 [rad]
-        
-        # 其他物理參數
-        self.sound_pressure = 0.2
-        self.Q_factor = 10.0
 
-        # 添加阻尼比（無單位）
-        self.material_damping_ratio = self.material.damping_ratio
-
-        # 在所有屬性定義之後再進行驗證
         self.validate_parameters()
     
     def validate_parameters(self) -> Dict[str, PhysicsVerification]:
-        """驗證所有系統參數"""
-        validations = {
+        """驗證系統參數"""
+        return {
             'wavelength': PhysicsVerification(
                 is_valid=0.1e-6 <= self.wavelength <= 10e-6,
                 actual_value=self.wavelength,
@@ -113,23 +95,20 @@ class SystemParameters:
                 description="聲壓 [Pa]"
             )
         }
-        
-        return validations
-    
+
     def get_parameters_dict(self) -> Dict[str, Any]:
-        """返回所有參數的字典形式"""
+        """返回系統參數的字典形式"""
         return {
             'wavelength': self.wavelength,
-            'power': self.power,
-            'beam_radius': self.beam_radius,
+            'beam_diameter': self.beam_diameter,
+            'optical_power': self.optical_power,
             'focal_length': self.focal_length,
             'working_distance': self.working_distance,
             'scan_angle': self.scan_angle,
             'sampling_rate': self.sampling_rate,
             'measurement_time': self.measurement_time,
             'f_acoustic': self.f_acoustic,
-            'Q_factor': self.Q_factor,
-            'boundary_factor': self.boundary_factor
+            'acoustic_pressure': self.acoustic_pressure
         }
     
     def update_parameter(self, parameter_name: str, value: Any) -> None:
