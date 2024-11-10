@@ -25,18 +25,18 @@ def main():
     print("\n使用傳統模態分析...")
     ldv_classical.plot_comprehensive_analysis()
     
-    # 使用Bessel模態分析
-    ldv_bessel = LaserDopplerVibrometer(
-        material=material,
-        modal_analyzer=BesselModalAnalysis,
-        analysis_type="bessel"
-    )
-    ldv_bessel.setup_measurement(box_dimensions)
-    print("\n使用Bessel模態分析...")
-    ldv_bessel.plot_comprehensive_analysis()
+    # # 使用Bessel模態分析
+    # ldv_bessel = LaserDopplerVibrometer(
+    #     material=material,
+    #     modal_analyzer=BesselModalAnalysis,
+    #     analysis_type="bessel"
+    # )
+    # ldv_bessel.setup_measurement(box_dimensions)
+    # print("\n使用Bessel模態分析...")
+    # ldv_bessel.plot_comprehensive_analysis()
     
-    # 比較兩種方法結果
-    compare_results(ldv_classical, ldv_bessel)
+    # # 比較兩種方法結果
+    # compare_results(ldv_classical, ldv_bessel)
 
 def compare_results(classical, bessel):
     """比較兩種模態分析方法的結果"""

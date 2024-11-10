@@ -3,6 +3,7 @@ import numpy as np
 from ..models.material import MaterialProperties
 from ..models.system import SystemParameters
 from ..models.modal import ClassicalModalAnalysis, BesselModalAnalysis
+from ..utils.logger import logger
 
 class SurfaceVibrationModel:
     """表面振動分析模型"""
@@ -23,9 +24,12 @@ class SurfaceVibrationModel:
         self.analysis_type = analysis_type
         self.modal_analyzer = modal_analyzer
         self.modal_analysis = None
+        self.box_dimensions = None  # 初始化為None
         
     def setup_modal_analysis(self, box_dimensions: Dict[str, float]):
         """設置模態分析"""
+        self.box_dimensions = box_dimensions  # 保存box_dimensions
+
         if self.modal_analyzer is None:
             raise ValueError("No modal analyzer specified")
             
@@ -33,8 +37,20 @@ class SurfaceVibrationModel:
             self.system_params,
             box_dimensions
         )
-        self.modal_analysis.calculate_modal_frequencies()
-        self.modal_analysis.calculate_modal_shapes()
+        
+        # 計算並存儲模態頻率和形狀
+        self.frequencies = self.modal_analysis.calculate_modal_frequencies()
+        self.mode_shapes = self.modal_analysis.calculate_modal_shapes()
+        
+        # 驗證計算結果
+        if not self.frequencies or not self.mode_shapes:
+            raise RuntimeError("模態計算失敗")
+        
+        # 打印模態分析結果
+        logger.info("\n模態分析結果：")
+        logger.info(f"計算得到 {len(self.frequencies)} 個模態")
+        logger.info(f"基頻: {self.frequencies[0]:.1f} Hz")
+        logger.info(f"最高頻: {self.frequencies[-1]:.1f} Hz")
 
     def calculate_surface_response(self, 
                                  x: float, 
@@ -52,28 +68,43 @@ class SurfaceVibrationModel:
             displacement: 位移時間序列
             velocity: 速度時間序列
         """
-        if self.modal_analyzer is None:
-            raise RuntimeError("請先設置模態分析器")
+        if not hasattr(self, 'frequencies') or not hasattr(self, 'mode_shapes'):
+            raise RuntimeError("請先執行setup_modal_analysis")
             
-        # 計算模態頻率和形狀
-        frequencies = self.modal_analysis.calculate_modal_frequencies()
-        mode_shapes = self.modal_analysis.calculate_modal_shapes()
+        if self.box_dimensions is None:
+            raise RuntimeError("請先設置box_dimensions")
+        
+        # 改用板中心點而不是邊界點
+        x = self.box_dimensions['length'] / 2 if x == 0 else x
+        y = self.box_dimensions['width'] / 2 if y == 0 else y
+        
+        logger.debug("\n表面響應計算驗證：")
+        logger.debug(f"實際計算位置: x={x:.3f}m, y={y:.3f}m")
+        logger.debug(f"時間點數: {len(time_points)}")
+        logger.debug(f"時間範圍: {time_points[0]:.3f}s - {time_points[-1]:.3f}s")
         
         # 計算位移和速度響應
         displacement = np.zeros_like(time_points)
         velocity = np.zeros_like(time_points)
         
+        # 逐點計算響應
         for t_idx, t in enumerate(time_points):
-            # 計算位移
-            displacement[t_idx] = self.modal_analysis.calculate_modal_response(x, y, t)
+            disp = self.modal_analysis.calculate_modal_response(x, y, t)
+            displacement[t_idx] = disp
             
-            # 計算速度（位移的時間導數）
-            if t_idx > 0:
-                dt = time_points[t_idx] - time_points[t_idx-1]
-                velocity[t_idx] = (displacement[t_idx] - displacement[t_idx-1]) / dt
-                
+            # 計算速度（使用中心差分）
+            if t_idx > 0 and t_idx < len(time_points)-1:
+                dt = time_points[t_idx+1] - time_points[t_idx-1]
+                velocity[t_idx] = (displacement[t_idx+1] - displacement[t_idx-1]) / dt
+        
+        # 儲存歷史數據
         self.displacement_history = displacement
         self.velocity_history = velocity
+        
+        # 輸出統計信息
+        logger.debug("\n響應統計:")
+        logger.debug(f"最大位移: {np.max(np.abs(displacement))*1e9:.2f} nm")
+        logger.debug(f"最大速度: {np.max(np.abs(velocity))*1e3:.2f} mm/s")
         
         return displacement, velocity
     

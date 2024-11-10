@@ -44,6 +44,16 @@ class LaserDopplerVibrometer:
         Args:
             box_dimensions: 結構尺寸參數 {"length": float, "width": float, "thickness": float}
         """
+        if not isinstance(box_dimensions, dict):
+            raise TypeError("box_dimensions must be a dictionary")
+            
+        # 驗證必要的尺寸參數
+        required_dims = ['length', 'width', 'thickness']
+        for dim in required_dims:
+            if dim not in box_dimensions:
+                raise ValueError(f"Missing required dimension: {dim}")
+                
+        self.box_dimensions = box_dimensions
         self.vibration_model.setup_modal_analysis(box_dimensions)
         
     def measure_point(self, 
