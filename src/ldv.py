@@ -231,43 +231,82 @@ class LaserDopplerVibrometer:
         x, y = 0, 0
         results = self.analyze_vibration(x, y)
         
-        # 創建子圖
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
+        # 創建 2x3 的子圖布局
+        fig = plt.figure(figsize=(15, 10))
+        gs = plt.GridSpec(2, 3, figure=fig)
         
-        # 位移和干涉信號時域圖
+        # 1. 表面振動分析 (左上)
+        ax1 = fig.add_subplot(gs[0, 0])
         ax1.plot(results['time'], results['displacement']*1e9, 'b-', label='位移')
-        ax1_twin = ax1.twinx()
-        ax1_twin.plot(results['time'], results['interference'], 'r-', alpha=0.5, label='干涉信號')
         ax1.set_xlabel('時間 (s)')
         ax1.set_ylabel('位移 (nm)')
-        ax1_twin.set_ylabel('干涉強度 (a.u.)')
-        ax1.set_title('位移與干涉信號')
+        ax1.set_title('表面振動位移')
         ax1.grid(True)
+        ax1.legend()
         
-        # 速度時域圖
-        ax2.plot(results['time'], results['velocity']*1e3)
+        # 2. 速度分析 (中上)
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.plot(results['time'], results['velocity']*1e3, 'g-', label='速度')
         ax2.set_xlabel('時間 (s)')
-        ax2.set_ylabel('速度 (mm/s)')
-        ax2.set_title('速度時域響應')
+        ax2.set_ylabel('速�� (mm/s)')
+        ax2.set_title('表面振動速度')
         ax2.grid(True)
+        ax2.legend()
         
-        # 頻譜圖
-        ax3.plot(results['frequencies'], results['amplitudes'])
+        # 3. 振動頻譜分析 (右上)
+        ax3 = fig.add_subplot(gs[0, 2])
+        ax3.plot(results['frequencies'], results['amplitudes'], 'r-', label='頻譜')
         ax3.set_xlabel('頻率 (Hz)')
         ax3.set_ylabel('振幅')
-        ax3.set_title('頻率響應')
+        ax3.set_title('振動頻率響應')
         ax3.grid(True)
+        ax3.legend()
         
-        # 測量品質指標
+        # 4. LDV 干涉信號 (左下)
+        ax4 = fig.add_subplot(gs[1, 0])
+        ax4.plot(results['time'], results['interference'], 'k-', label='干涉強度')
+        ax4.set_xlabel('時間 (s)')
+        ax4.set_ylabel('光強度 (a.u.)')
+        ax4.set_title('LDV 干涉信號')
+        ax4.grid(True)
+        ax4.legend()
+        
+        # 5. 干涉信號頻譜 (中下)
+        ax5 = fig.add_subplot(gs[1, 1])
+        valid_idx = results['interference_frequencies'] > 0
+        ax5.plot(results['interference_frequencies'][valid_idx],
+                results['interference_amplitudes'][valid_idx],
+                'b-', label='干涉頻譜')
+        ax5.set_xlabel('頻率 (Hz)')
+        ax5.set_ylabel('振幅')
+        ax5.set_title('干涉信號頻譜')
+        ax5.grid(True)
+        ax5.legend()
+        
+        # 6. 測量品質指標 (右下)
+        ax6 = fig.add_subplot(gs[1, 2])
+        ax6.axis('off')
         quality = self.get_measurement_quality(self.system_params.working_distance)
-        ax4.axis('off')
+        stats = results['diagnostics']
+        
+        # 組合顯示文本
         quality_text = '\n'.join([
+            "測量品質指標:",
             f"SNR: {quality['snr']:.1f} dB",
             f"空間解析度: {quality['spatial_resolution']*1e6:.1f} μm",
-            f"最大可測速度: {quality['max_velocity']*1e3:.1f} mm/s"
+            f"最大可測速度: {quality['max_velocity']*1e3:.1f} mm/s",
+            "\n振動統計:",
+            f"RMS位移: {stats['displacement_stats']['rms']*1e9:.2f} nm",
+            f"RMS速度: {stats['velocity_stats']['rms']*1e3:.2f} mm/s",
+            "\n干涉信號統計:",
+            f"調制深度: {stats['interference_stats']['modulation_depth']:.2f}",
+            f"平均強度: {stats['interference_stats']['mean']:.2e}"
         ])
-        ax4.text(0.1, 0.5, quality_text, fontsize=10)
-        ax4.set_title('測量品質指標')
+        ax6.text(0.05, 0.95, quality_text, 
+                transform=ax6.transAxes,
+                verticalalignment='top',
+                fontsize=9)
+        ax6.set_title('測量參數統計')
         
         plt.tight_layout()
         plt.show()
