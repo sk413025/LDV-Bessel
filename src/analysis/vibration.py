@@ -97,6 +97,22 @@ class SurfaceVibrationModel:
                 dt = time_points[t_idx+1] - time_points[t_idx-1]
                 velocity[t_idx] = (displacement[t_idx+1] - displacement[t_idx-1]) / dt
         
+        # 增加模態響應分析的記錄
+        logger.debug("\n模態分析統計:")
+        mode_contributions = []
+        for idx, freq in enumerate(self.frequencies):
+            response = np.array([self.modal_analysis.calculate_modal_response(x, y, t) for t in time_points])
+            contribution = np.sqrt(np.mean(response**2))
+            mode_contributions.append((idx+1, freq, contribution))
+            logger.debug(f"模態 {idx+1} (頻率: {freq:.1f} Hz):")
+            logger.debug(f"  RMS貢獻: {contribution*1e9:.2f} nm")
+            
+        # 排序找出主要貢獻模態
+        main_modes = sorted(mode_contributions, key=lambda x: x[2], reverse=True)[:3]
+        logger.debug("\n主要貢獻模態:")
+        for mode, freq, contrib in main_modes:
+            logger.debug(f"模態 {mode} (頻率: {freq:.1f} Hz): {contrib*1e9:.2f} nm")
+        
         # 儲存歷史數據
         self.displacement_history = displacement
         self.velocity_history = velocity

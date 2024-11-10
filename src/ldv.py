@@ -5,6 +5,7 @@ from .models.system import SystemParameters
 from .models.optical import OpticalSystem
 from .models.material import MaterialProperties
 from .analysis.vibration import SurfaceVibrationModel
+from .utils.logger import logger
 
 class LaserDopplerVibrometer:
     """雷射都卜勒振動儀主類"""
@@ -25,11 +26,11 @@ class LaserDopplerVibrometer:
         self.system_params = SystemParameters(material)
         self.optical_system = OpticalSystem(
             wavelength=self.system_params.wavelength,
-            beam_diameter=2*self.system_params.beam_radius,
+            beam_diameter=self.system_params.beam_diameter,
             focal_length=self.system_params.focal_length,
             working_distance=self.system_params.working_distance,
             beam_divergence=self.system_params.scan_angle,
-            optical_power=self.system_params.power
+            optical_power=self.system_params.optical_power
         )
         self.vibration_model = SurfaceVibrationModel(
             system_params=self.system_params,
@@ -131,11 +132,29 @@ class LaserDopplerVibrometer:
     
     def analyze_vibration(self, x: float, y: float) -> Dict[str, Any]:
         """分析指定點的振動"""
-        duration = self.system_params.measurement_time
-        time_points = np.linspace(0, duration, int(self.system_params.sampling_rate * duration))
+        duration = self.system_params.measurement_time  # 測量時間 [s]
+        sampling_rate = self.system_params.sampling_rate  # 採樣率 [Hz]
+        time_step = 1 / sampling_rate  # 時間步長 [s]
+        logger.info(f"採樣率（sampling rate）: {sampling_rate} Hz")
+        logger.info(f"時間步長（time step）: {time_step:.2e} s")
+        time_points = np.linspace(0, duration, int(sampling_rate * duration))
         
         # 計算振動響應
         displacement, velocity = self.vibration_model.calculate_surface_response(x, y, time_points)
+        
+        # 計算干涉信號
+        interference_intensity = []
+        for t_idx, t in enumerate(time_points):
+            # 計算參考光和測量光
+            E_ref = self.optical_system.calculate_reference_beam(t)
+            E_meas = self.optical_system.calculate_measurement_beam(
+                x, y, displacement[t_idx], t, self.material)
+            
+            # 計算干涉強度
+            intensity = self.optical_system.calculate_interference_intensity(E_ref, E_meas)
+            interference_intensity.append(intensity)
+        
+        interference_intensity = np.array(interference_intensity)
         
         # 計算頻譜
         frequencies, amplitudes = self.vibration_model.get_frequency_response(
@@ -143,31 +162,71 @@ class LaserDopplerVibrometer:
             duration
         )
         
+        # 干涉信號的頻譜
+        int_frequencies = np.fft.fftfreq(len(time_points), 1/self.system_params.sampling_rate)
+        int_fft = np.fft.fft(interference_intensity)
+        int_amplitudes = np.abs(int_fft)
+        
         # 計算統計量
         diagnostics = {
             'displacement_stats': {
                 'max': np.max(np.abs(displacement)),
+                'min': np.min(displacement),
+                'mean': np.mean(displacement),
                 'rms': np.sqrt(np.mean(displacement**2))
             },
             'velocity_stats': {
                 'max': np.max(np.abs(velocity)),
+                'min': np.min(velocity),
+                'mean': np.mean(velocity),
                 'rms': np.sqrt(np.mean(velocity**2))
+            },
+            'interference_stats': {
+                'max': np.max(interference_intensity),
+                'min': np.min(interference_intensity),
+                'mean': np.mean(interference_intensity),
+                'modulation_depth': (np.max(interference_intensity) - np.min(interference_intensity)) / 
+                                  (np.max(interference_intensity) + np.min(interference_intensity))
             }
         }
         
+        # 記錄詳細統計信息
+        logger.debug("\n振動分析詳細統計:")
+        logger.debug("位移統計:")
+        for key, value in diagnostics['displacement_stats'].items():
+            logger.debug(f"  {key}: {value*1e9:.2f} nm")
+            
+        logger.debug("\n速度統計:")
+        for key, value in diagnostics['velocity_stats'].items():
+            logger.debug(f"  {key}: {value*1e3:.2f} mm/s")
+            
+        logger.debug("\n干涉信號統計:")
+        for key, value in diagnostics['interference_stats'].items():
+            logger.debug(f"  {key}: {value:.3e}")
+            
+        # 記錄頻率分析結果
+        peak_freqs = frequencies[np.argsort(amplitudes)[-3:]]
+        peak_amps = sorted(amplitudes)[-3:]
+        logger.debug("\n主要振動頻率成分:")
+        for freq, amp in zip(peak_freqs, peak_amps):
+            logger.debug(f"  頻率: {freq:.1f} Hz, 振幅: {amp:.2e}")
+            
         return {
             'time': time_points,
             'displacement': displacement,
             'velocity': velocity,
+            'interference': interference_intensity,
             'frequencies': frequencies,
             'amplitudes': amplitudes,
+            'interference_frequencies': int_frequencies[int_frequencies > 0],
+            'interference_amplitudes': int_amplitudes[int_frequencies > 0],
             'diagnostics': diagnostics
         }
-    
+        
     def plot_comprehensive_analysis(self) -> None:
         """繪製綜合分析圖"""
         plt.rcParams['font.family'] = ['Microsoft JhengHei']
-
+        
         # 測量中心點
         x, y = 0, 0
         results = self.analyze_vibration(x, y)
@@ -175,11 +234,14 @@ class LaserDopplerVibrometer:
         # 創建子圖
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
         
-        # 位移時域圖
-        ax1.plot(results['time'], results['displacement']*1e9)
+        # 位移和干涉信號時域圖
+        ax1.plot(results['time'], results['displacement']*1e9, 'b-', label='位移')
+        ax1_twin = ax1.twinx()
+        ax1_twin.plot(results['time'], results['interference'], 'r-', alpha=0.5, label='干涉信號')
         ax1.set_xlabel('時間 (s)')
         ax1.set_ylabel('位移 (nm)')
-        ax1.set_title('位移時域響應')
+        ax1_twin.set_ylabel('干涉強度 (a.u.)')
+        ax1.set_title('位移與干涉信號')
         ax1.grid(True)
         
         # 速度時域圖
