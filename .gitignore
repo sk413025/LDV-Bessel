@@ -8,4 +8,14 @@
 *.pyd
 *.pyd
 *.pyd
+
+*.png
+*.gif
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+
 logs/
