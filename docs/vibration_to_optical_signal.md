@@ -177,30 +177,215 @@ $$
 
 ---
 
-## 4. 代码实现
+## 4. 代码实现与公式对应
 
-在 `ldv.py` 的 `analyze_vibration` 函数中，实现了上述转换过程：
+在 `ldv.py` 的 `analyze_vibration` 函数中，实现了将表面振动转换为光信号的计算过程。以下将详细解释第 3 部分中的物理数学公式是如何对应到代码中的具体实现的。
 
-1. **计算表面位移**：
-   ```python
-   displacement, velocity = self.vibration_model.calculate_surface_response(x, y, time_points)
-   ```
-   - `calculate_surface_response` 函数根据模态分解模型计算表面位移和速度。
+### 4.1 表面位移和速度计算
 
-2. **计算参考光和测量光**：
-   ```python
-   E_ref = self.optical_system.calculate_reference_beam(t)
-   E_meas = self.optical_system.calculate_measurement_beam(x, y, displacement[t_idx], t, self.material)
-   ```
-   - `calculate_reference_beam` 函数计算参考光束的电场。
-   - `calculate_measurement_beam` 函数计算测量光束的电场，其中考虑了表面位移引起的相位变化。
+- **公式回顾**:
 
-3. **计算干涉强度**：
-   ```python
-   intensity = self.optical_system.calculate_interference_intensity(E_ref, E_meas)
-   interference_intensity.append(intensity)
-   ```
-   - `calculate_interference_intensity` 函数根据参考光和测量光的电场计算干涉强度。
+  - 表面位移公式 (3.1):
+    $$
+    u(x, y, t) = \sum_{n=1}^{\infty} \Phi_n(x, y) q_n(t)
+    $$
+  - 模态坐标公式 (3.2):
+    $$
+    q_n(t) = A_n \cos(\omega_n t + \phi_n)
+    $$
+  - 表面速度公式 (3.3):
+    $$
+    v(x, y, t) = \frac{\partial u(x, y, t)}{\partial t} = \sum_{n=1}^{\infty} \Phi_n(x, y) \dot{q}_n(t)
+    $$
+    其中
+    $$
+    \dot{q}_n(t) = -A_n \omega_n \sin(\omega_n t + \phi_n)
+    $$
+
+- **代码实现**:
+
+  ```python:src/ldv.py
+  # ...
+  displacement, velocity = self.vibration_model.calculate_surface_response(x, y, time_points)
+  # ...
+  ```
+
+  - `calculate_surface_response` 函数对应于公式 (3.1) 和 (3.3)。它根据模态分解模型计算表面在给定位置 `(x, y)` 和时间点 `time_points` 的位移 `displacement` 和速度 `velocity`。
+  - 具体计算方法在 `ClassicalModalAnalysis` 或 `BesselModalAnalysis` 类中实现，分别对应于 `classical` 和 `bessel` 两种分析类型。
+  - `ClassicalModalAnalysis` 类中的 `calculate_modal_response` 函数实现了公式 (3.1) 的求和部分，而 `calculate_single_mode_response` 函数则计算了每个模态的贡献，对应于公式 (3.2) 和 (3.3) 中的 \(q_n(t)\) 和 \(\dot{q}_n(t)\)。
+  - `BesselModalAnalysis` 类中的 `calculate_modal_response` 函数和 `calculate_single_mode_response` 函数也实现了类似的计算，但基于贝塞尔函数。
+
+### 4.2 光程差和相位差计算
+
+- **公式回顾**:
+
+  - 光程差公式 (3.4):
+    $$
+    \Delta L(x, y, t) = 2u(x, y, t)
+    $$
+  - 相位差公式 (3.5):
+    $$
+    \Delta \phi(x, y, t) = \frac{2\pi}{\lambda} \Delta L(x, y, t) = \frac{4\pi}{\lambda} u(x, y, t)
+    $$
+
+- **代码实现**:
+
+  ```python:src/ldv.py
+  # ...
+  E_meas = self.optical_system.calculate_measurement_beam(x, y, displacement[t_idx], t, self.material)
+  # ...
+  ```
+
+  ```python:src/models/optical.py
+  # ...
+  class OpticalSystem:
+      # ...
+      def calculate_measurement_beam(self, x: float, y: float, 
+                                  displacement: float, t: float,
+                                  material: MaterialProperties) -> complex:
+          """計算測量光場
+          
+          Args:
+              x, y: 測量位置 [m]
+              displacement: 表面位移 [m]
+              t: 時間 [s]
+              material: 材料特性
+              
+          Returns:
+              complex: 測量光場複數振幅
+          """
+          # ...
+          # 計算總相位
+          # ...
+          path_phase = 2 * np.pi / self.wavelength * (self.measurement_path + 2*displacement)
+          # ...
+          total_phase = path_phase + time_phase + gaussian_phase + tilt_phase
+          
+          return E0 * np.exp(1j * total_phase)
+      # ...
+  ```
+
+  - `calculate_measurement_beam` 函数计算测量光束的电场，其中考虑了表面位移 `displacement` 引起的相位变化。
+  - `path_phase = 2 * np.pi / self.wavelength * (self.measurement_path + 2*displacement)` 这一行代码直接对应了公式 (3.4) 和 (3.5)。其中 `2*displacement` 对应于光程差 \(\Delta L\)，`2 * np.pi / self.wavelength` 对应于 \(\frac{2\pi}{\lambda}\)，两者相乘即得到相位差 \(\Delta \phi\)。
+
+### 4.3 光场计算
+
+- **公式回顾**:
+
+  - 参考光束电场公式 (3.6):
+    $$
+    E_{ref}(t) = E_r \cos(\omega t)
+    $$
+  - 测量光束电场公式 (3.7):
+    $$
+    E_{meas}(x, y, t) = E_m \cos(\omega t + \Delta \phi(x, y, t))
+    $$
+
+- **代码实现**:
+
+  ```python:src/ldv.py
+  # ...
+  E_ref = self.optical_system.calculate_reference_beam(t)
+  E_meas = self.optical_system.calculate_measurement_beam(x, y, displacement[t_idx], t, self.material)
+  # ...
+  ```
+
+  ```python:src/models/optical.py
+  # ...
+  class OpticalSystem:
+      # ...
+      def calculate_reference_beam(self, t: float) -> complex:
+          """計算參考光場
+          
+          Args:
+              t: 時間 [s]
+              
+          Returns:
+              complex: 參考光場複數振幅
+          """
+          # ...
+          phase = (2 * np.pi / self.wavelength * self.reference_path - 
+                  omega_laser * t)
+          
+          return E0 * np.exp(1j * phase)
+
+      def calculate_measurement_beam(self, x: float, y: float, 
+                                  displacement: float, t: float,
+                                  material: MaterialProperties) -> complex:
+          """計算測量光場
+          
+          Args:
+              x, y: 測量位置 [m]
+              displacement: 表面位移 [m]
+              t: 時間 [s]
+              material: 材料特性
+              
+          Returns:
+              complex: 測量光場複數振幅
+          """
+          # ...
+          # 計算總相位
+          omega_laser = 2 * np.pi * 3e8 / self.wavelength
+          path_phase = 2 * np.pi / self.wavelength * (self.measurement_path + 2*displacement)
+          time_phase = -omega_laser * t
+          gaussian_phase = (2 * np.pi / self.wavelength * r2/(2*self.R_z) - 
+                          self.gouy_phase)
+          tilt_phase = (2 * np.pi * self.w_0 * np.sin(tilt_angle) / self.wavelength)
+          total_phase = path_phase + time_phase + gaussian_phase + tilt_phase
+          
+          return E0 * np.exp(1j * total_phase)
+      # ...
+  ```
+
+  - `calculate_reference_beam` 函数计算参考光束的电场，对应于公式 (3.6)。
+  - `calculate_measurement_beam` 函数计算测量光束的电场，对应于公式 (3.7)。其中 `total_phase` 包含了相位差 \(\Delta \phi(x, y, t)\) 以及其他相位项。
+
+### 4.4 干涉强度计算
+
+- **公式回顾**:
+
+  - 干涉强度公式 (3.8):
+    $$
+    I(x, y, t) = |E_{ref}(t) + E_{meas}(x, y, t)|^2
+    $$
+    展开并化简后得到：
+    $$
+    I(x, y, t) = E_r^2 + E_m^2 + 2E_r E_m \cos(\Delta \phi(x, y, t))
+    $$
+
+- **代码实现**:
+
+  ```python:src/ldv.py
+  # ...
+  intensity = self.optical_system.calculate_interference_intensity(E_ref, E_meas)
+  interference_intensity.append(intensity)
+  # ...
+  ```
+
+  ```python:src/models/optical.py
+  # ...
+  class OpticalSystem:
+      # ...
+      def calculate_interference_intensity(self, E_ref: complex, 
+                                        E_meas: complex) -> float:
+          """計算干涉強度
+          
+          Args:
+              E_ref: 參考光場
+              E_meas: 測量光場
+              
+          Returns:
+              float: 干涉強度
+          """
+          # 考慮相干性的干涉計算
+          intensity = np.abs(E_ref + E_meas * self.coherence_factor)**2
+          
+          return intensity
+      # ...
+  ```
+
+  - `calculate_interference_intensity` 函数计算干涉强度，对应于公式 (3.8)。
+  - `np.abs(E_ref + E_meas * self.coherence_factor)**2` 直接对应了 \(|E_{ref}(t) + E_{meas}(x, y, t)|^2\)，其中 `self.coherence_factor` 考虑了相干性的影响。
 
 ---
 
